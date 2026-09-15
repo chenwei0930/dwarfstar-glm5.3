@@ -89,8 +89,6 @@ RUN chmod +x \
         /opt/ds4/ds4-agent \
     && mkdir -p /models /kv-cache /logs
 
-# NVIDIA Container Toolkit 会把宿主机驱动 libcuda 注入容器。
-# CUDA runtime/libcublas 来自 nvidia/cuda runtime 镜像。
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib
@@ -99,14 +97,12 @@ EXPOSE 8000
 
 ENTRYPOINT ["/opt/ds4/ds4-server"]
 
-CMD [
-  "--cuda",
-  "--host", "0.0.0.0",
-  "--port", "8000",
-  "--ctx", "32768",
-  "-m", "/models/model.gguf",
-  "--kv-disk-dir", "/kv-cache",
-  "--kv-disk-space-mb", "16384",
-  "--kv-cache-cold-max-tokens", "65000",
-  "--kv-cache-reject-different-quant"
-]
+CMD ["--cuda", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--ctx", "32768", \
+     "-m", "/models/model.gguf", \
+     "--kv-disk-dir", "/kv-cache", \
+     "--kv-disk-space-mb", "16384", \
+     "--kv-cache-cold-max-tokens", "65000", \
+     "--kv-cache-reject-different-quant"]
