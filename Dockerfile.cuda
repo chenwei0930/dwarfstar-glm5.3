@@ -32,11 +32,7 @@ COPY . .
 
 # 不使用 native，明确针对 NVIDIA A10 编译
 RUN make clean || true && \
-    make -B cuda \
-        CUDA_ARCH=${CUDA_ARCH} \
-        DEBUG_FLAGS="-DNDEBUG" \
-        CFLAGS="-O3 -ffast-math -DNDEBUG -D_GNU_SOURCE -fno-finite-math-only -march=x86-64 -Wall -Wextra -std=c99" \
-        NVCCFLAGS="-O3 --use_fast_math -arch=${CUDA_ARCH} -Xcompiler -pthread"
+    make -B cuda CUDA_ARCH=${CUDA_ARCH}
 
 # 保存构建信息
 RUN printf '%s\n' \
