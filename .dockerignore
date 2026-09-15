@@ -1,0 +1,11 @@
+.git
+.github
+gguf
+models
+kv-cache
+logs
+*.gguf
+*.bin
+*.safetensors
+build
+dist
