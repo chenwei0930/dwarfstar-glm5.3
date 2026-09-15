@@ -1,0 +1,112 @@
+# syntax=docker/dockerfile:1.7
+
+ARG CUDA_VERSION=12.9.1
+
+# ============================================================
+# Build stage
+# ============================================================
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS builder
+
+ARG CUDA_VERSION=12.9.1
+ARG CUDA_ARCH=sm_86
+ARG DS4_GIT_COMMIT=unknown
+ARG DS4_BUILD_DATE=unknown
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        git \
+        ca-certificates \
+        pkg-config \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Docker build context 应该是 ds4 仓库根目录
+COPY . .
+
+# 不使用 native，明确针对 NVIDIA A10 编译
+RUN make clean || true && \
+    make -B cuda \
+        CUDA_ARCH=${CUDA_ARCH} \
+        DEBUG_FLAGS="-DNDEBUG" \
+        CFLAGS="-O3 -ffast-math -DNDEBUG -D_GNU_SOURCE -fno-finite-math-only -march=x86-64 -Wall -Wextra -std=c99" \
+        NVCCFLAGS="-O3 --use_fast_math -arch=${CUDA_ARCH} -Xcompiler -pthread"
+
+# 保存构建信息
+RUN printf '%s\n' \
+      "ds4_git_commit=${DS4_GIT_COMMIT}" \
+      "ds4_cuda_version=${CUDA_VERSION}" \
+      "ds4_cuda_arch=${CUDA_ARCH}" \
+      "ds4_build_date=${DS4_BUILD_DATE}" \
+      > BUILD_INFO
+
+# ============================================================
+# Runtime stage
+# ============================================================
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS runtime
+
+ARG CUDA_VERSION=12.9.1
+ARG CUDA_ARCH=sm_86
+ARG DS4_GIT_COMMIT=unknown
+ARG DS4_BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.title="DwarfStar ds4 CUDA runtime" \
+      org.opencontainers.image.description="DeepSeek/GLM/Qwen native inference runtime for NVIDIA CUDA" \
+      org.opencontainers.image.source="https://github.com/antirez/ds4" \
+      org.opencontainers.image.revision="${DS4_GIT_COMMIT}" \
+      org.opencontainers.image.created="${DS4_BUILD_DATE}" \
+      com.ds4.cuda.version="${CUDA_VERSION}" \
+      com.ds4.cuda.arch="${CUDA_ARCH}"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libgomp1 \
+        libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/ds4
+
+COPY --from=builder /src/ds4 .
+COPY --from=builder /src/ds4-server .
+COPY --from=builder /src/ds4-bench .
+COPY --from=builder /src/ds4-eval .
+COPY --from=builder /src/ds4-agent .
+COPY --from=builder /src/BUILD_INFO .
+
+RUN chmod +x \
+        /opt/ds4/ds4 \
+        /opt/ds4/ds4-server \
+        /opt/ds4/ds4-bench \
+        /opt/ds4/ds4-eval \
+        /opt/ds4/ds4-agent \
+    && mkdir -p /models /kv-cache /logs
+
+# NVIDIA Container Toolkit 会把宿主机驱动 libcuda 注入容器。
+# CUDA runtime/libcublas 来自 nvidia/cuda runtime 镜像。
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib
+
+EXPOSE 8000
+
+ENTRYPOINT ["/opt/ds4/ds4-server"]
+
+CMD [
+  "--cuda",
+  "--host", "0.0.0.0",
+  "--port", "8000",
+  "--ctx", "32768",
+  "-m", "/models/model.gguf",
+  "--kv-disk-dir", "/kv-cache",
+  "--kv-disk-space-mb", "16384",
+  "--kv-cache-cold-max-tokens", "65000",
+  "--kv-cache-reject-different-quant"
+]
