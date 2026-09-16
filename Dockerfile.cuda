@@ -1,4 +1,4 @@
-FROM docker.io/nvidia/cuda:13.1.2-cudnn-runtime-ubuntu24.04
+FROM docker.io/nvidia/cuda:13.1.2-cudnn-devel-ubuntu24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git make gcc g++ ca-certificates && \
